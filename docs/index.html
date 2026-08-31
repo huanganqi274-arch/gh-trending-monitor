@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHub Trending 监控</title>
+<style>
+:root {
+  --bg: #f2f3f5;
+  --surface: #ffffff;
+  --ink: #1f2329;
+  --muted: #646a73;
+  --line: #dee0e3;
+  --rise: #f54a45;
+  --fall: #2ea121;
+  --accent: #3370ff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+               system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+.wrap { max-width: 1000px; margin: 0 auto; padding: 40px 20px 80px; }
+header { margin-bottom: 28px; }
+h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+.meta { color: var(--muted); font-size: 13px; margin: 0; }
+nav { display: flex; flex-wrap: wrap; gap: 4px; margin: 24px 0 0; }
+nav button {
+  border: 1px solid transparent; background: none; cursor: pointer;
+  font: inherit; font-size: 14px; color: var(--muted);
+  padding: 6px 12px; border-radius: 6px;
+}
+nav button:hover { background: rgba(31,35,41,.05); color: var(--ink); }
+nav button[aria-selected="true"] {
+  background: var(--surface); color: var(--ink);
+  border-color: var(--line); font-weight: 500;
+}
+nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.board { display: none; }
+.board.active { display: block; }
+.lede { margin: 22px 0 16px; color: var(--muted); font-size: 14px; }
+.lede b { color: var(--ink); font-weight: 600; }
+table { width: 100%; border-collapse: collapse; background: var(--surface);
+        border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+thead th {
+  text-align: left; font-size: 12px; font-weight: 500; color: var(--muted);
+  padding: 10px 14px; border-bottom: 1px solid var(--line); background: #fafbfc;
+  white-space: nowrap;
+}
+thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
+.row td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.row:last-child td { border-bottom: none; }
+.row:hover td { background: #fafbfc; }
+.row.watched td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.rank { width: 62px; color: var(--muted); font-size: 14px; padding-left: 18px !important; }
+.repo a { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px; }
+.repo a:hover { color: var(--accent); text-decoration: underline; }
+.desc {
+  margin: 3px 0 6px; color: var(--muted); font-size: 13.5px; max-width: 62ch;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.nodesc { color: #a5abb3; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font-size: 11.5px; color: var(--muted); background: #f2f3f5;
+  padding: 1px 7px; border-radius: 4px;
+}
+.chip-new { background: rgba(245,74,69,.1); color: var(--rise); font-weight: 500; }
+.gain { width: 170px; text-align: right; }
+.gain .num { font-weight: 600; color: var(--rise); font-size: 15px; }
+.gain .bar {
+  height: 3px; background: var(--rise); opacity: .3; border-radius: 2px;
+  margin: 6px 0 0 auto;
+}
+.delta { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
+.delta.up { color: var(--rise); }
+.delta.down { color: var(--fall); }
+.total { width: 100px; text-align: right; color: var(--muted); font-size: 14px; }
+.empty { color: var(--muted); padding: 40px 0; }
+.banner {
+  margin: 22px 0 0; padding: 11px 14px; font-size: 13.5px;
+  background: #fff8e6; border: 1px solid #f5d99b; border-radius: 6px;
+  color: #7a5b12; max-width: 70ch;
+}
+code { background: rgba(31,35,41,.06); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+footer { margin-top: 32px; color: var(--muted); font-size: 12.5px; }
+@media (max-width: 640px) {
+  .wrap { padding: 24px 14px 60px; }
+  thead { display: none; }
+  .row td { display: block; border-bottom: none; padding: 4px 14px; }
+  .row { display: block; border-bottom: 1px solid var(--line); padding: 10px 0; }
+  .rank { color: var(--muted); font-size: 12px; padding-left: 14px !important; }
+  .gain, .total { width: auto; text-align: left; }
+  .gain .bar { display: none; }
+  .total { padding-bottom: 12px !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>GitHub Trending 监控</h1>
+    <p class="meta">更新于 2026-08-31 03:02　左侧蓝线标记的是命中关注方向的项目</p>
+    <nav><button data-board="daily-all" aria-selected="true">日榜 · 全部语言</button><button data-board="weekly-all" aria-selected="false">周榜 · 全部语言</button><button data-board="daily-python" aria-selected="false">日榜 · python</button></nav>
+  </header>
+  
+    <section class="board active" data-board="daily-all">
+      
+      <p class="lede">
+        2026-08-31 的榜单上有 <b>19</b> 个项目，其中
+        <b>0</b> 个是今天新冒出来的，
+        <b>9</b> 个命中了你设的关注方向。
+      </p>
+      <table>
+        <thead>
+          <tr><th>排名</th><th>项目</th><th>新增 star</th><th>总计</th></tr>
+        </thead>
+        <tbody>
+      <tr class="row watched">
+        <td class="rank">1</td>
+        <td class="repo">
+          <a href="https://github.com/THU-MAIC/OpenMAIC" target="_blank" rel="noopener">THU-MAIC/OpenMAIC</a>
+          <p class="desc">Open Multi-Agent Interactive Classroom — Get an immersive, multi-agent learning experience in just one click</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+1,370</span>
+          
+          <div class="bar" style="width:37%"></div>
+        </td>
+        <td class="total">24,411</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">2</td>
+        <td class="repo">
+          <a href="https://github.com/K-Dense-AI/scientific-agent-skills" target="_blank" rel="noopener">K-Dense-AI/scientific-agent-skills</a>
+          <p class="desc">Turn any AI agent into an AI Scientist. The #1 Agent Skills library for science, used by 190,000+ scientists worldwide. 165 ready-to-use validated skills plus 100+ scientific databases covering biology, chemistry, medicine, and drug discovery. Compatible with Cursor, Claude Code, Codex, Pi, Antigravity, and the open Agent Skills standard.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+1,114</span>
+          
+          <div class="bar" style="width:30%"></div>
+        </td>
+        <td class="total">39,471</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">3</td>
+        <td class="repo">
+          <a href="https://github.com/Lakr233/vphone-cli" target="_blank" rel="noopener">Lakr233/vphone-cli</a>
+          <p class="desc"><span class="nodesc">该项目没有写描述</span></p>
+          <div class="chips"><span class="chip">Swift</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+361</span>
+          
+          <div class="bar" style="width:10%"></div>
+        </td>
+        <td class="total">9,709</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">4</td>
+        <td class="repo">
+          <a href="https://github.com/tt-a1i/archify" target="_blank" rel="noopener">tt-a1i/archify</a>
+          <p class="desc">Agent skill for beautiful, verifiable architecture, workflow, sequence, data-flow, and lifecycle diagrams—self-contained HTML with motion and crisp export.</p>
+          <div class="chips"><span class="chip">JavaScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+3,722</span>
+          
+          <div class="bar" style="width:100%"></div>
+        </td>
+        <td class="total">35,142</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">5</td>
+        <td class="repo">
+          <a href="https://github.com/p-e-w/heretic" target="_blank" rel="noopener">p-e-w/heretic</a>
+          <p class="desc">Fully automatic censorship removal for language models</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+369</span>
+          
+          <div class="bar" style="width:10%"></div>
+        </td>
+        <td class="total">29,234</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">6</td>
+        <td class="repo">
+          <a href="https://github.com/unclecode/crawl4ai" target="_blank" rel="noopener">unclecode/crawl4ai</a>
+          <p class="desc">🚀🤖 Crawl4AI: Open-source LLM Friendly Web Crawler &amp; Scraper. Don&#x27;t be shy, join here: https://discord.gg/jP8KfhDhyN</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+221</span>
+          
+          <div class="bar" style="width:6%"></div>
+        </td>
+        <td class="total">80,299</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">7</td>
+        <td class="repo">
+          <a href="https://github.com/mvanhorn/last30days-skill" target="_blank" rel="noopener">mvanhorn/last30days-skill</a>
+          <p class="desc">AI agent skill that researches any topic across Reddit, X, YouTube, HN, Polymarket, and the web - then synthesizes a grounded summary</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+230</span>
+          
+          <div class="bar" style="width:6%"></div>
+        </td>
+        <td class="total">60,550</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">8</td>
+        <td class="repo">
+          <a href="https://github.com/majd/ipatool" target="_blank" rel="noopener">majd/ipatool</a>
+          <p class="desc">Command-line tool that allows searching and downloading app packages (known as ipa files) for iOS, iPadOS, tvOS, and visionOS from the App Store.</p>
+          <div class="chips"><span class="chip">Go</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+58</span>
+          
+          <div class="bar" style="width:2%"></div>
+        </td>
+        <td class="total">10,262</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">9</td>
+        <td class="repo">
+          <a href="https://github.com/punkpeye/awesome-mcp-servers" target="_blank" rel="noopener">punkpeye/awesome-mcp-servers</a>
+          <p class="desc">A collection of MCP servers.</p>
+          <div class="chips"></div>
+        </td>
+        <td class="gain">
+          <span class="num">+96</span>
+          
+          <div class="bar" style="width:3%"></div>
+        </td>
+        <td class="total">93,390</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">10</td>
+        <td class="repo">
+          <a href="https://github.com/checkstyle/checkstyle" target="_blank" rel="noopener">checkstyle/checkstyle</a>
+          <p class="desc">Checkstyle is a development tool to help programmers write Java code that adheres to a coding standard. By default it supports the Google Java Style Guide and Sun Code Conventions, but is highly configurable. It can be invoked with an ANT task and a command line program.</p>
+          <div class="chips"><span class="chip">Java</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+115</span>
+          
+          <div class="bar" style="width:3%"></div>
+        </td>
+        <td class="total">9,223</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">11</td>
+        <td class="repo">
+          <a href="https://github.com/NationalSecurityAgency/ghidra" target="_blank" rel="noopener">NationalSecurityAgency/ghidra</a>
+          <p class="desc">Ghidra is a software reverse engineering (SRE) framework</p>
+          <div class="chips"><span class="chip">Java</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+198</span>
+          
+          <div class="bar" style="width:5%"></div>
+        </td>
+        <td class="total">73,946</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">12</td>
+        <td class="repo">
+          <a href="https://github.com/pollen-robotics/microduck_rl" target="_blank" rel="noopener">pollen-robotics/microduck_rl</a>
+          <p class="desc">RL training environments for Microduck (mjlab)</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+168</span>
+          
+          <div class="bar" style="width:5%"></div>
+        </td>
+        <td class="total">827</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">13</td>
+        <td class="repo">
+          <a href="https://github.com/handsomestWei/patent-disclosure-skill" target="_blank" rel="noopener">handsomestWei/patent-disclosure-skill</a>
+          <p class="desc">中国专利.skill：专利点挖掘与交底书（发明/实用/外观）编写，通俗解读专利，嗅探政策动向，辅助审查答复。</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+62</span>
+          
+          <div class="bar" style="width:2%"></div>
+        </td>
+        <td class="total">5,781</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">14</td>
+        <td class="repo">
+          <a href="https://github.com/corsairdev/corsair" target="_blank" rel="noopener">corsairdev/corsair</a>
+          <p class="desc">Connect your users to their apps</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+126</span>
+          
+          <div class="bar" style="width:3%"></div>
+        </td>
+        <td class="total">10,986</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">15</td>
+        <td class="repo">
+          <a href="https://github.com/every-app/open-seo" target="_blank" rel="noopener">every-app/open-seo</a>
+          <p class="desc">Open source alternative to Semrush and Ahrefs</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+469</span>
+          
+          <div class="bar" style="width:13%"></div>
+        </td>
+        <td class="total">15,234</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">16</td>
+        <td class="repo">
+          <a href="https://github.com/colinhacks/zod" target="_blank" rel="noopener">colinhacks/zod</a>
+          <p class="desc">TypeScript-first schema validation with static type inference</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+31</span>
+          
+          <div class="bar" style="width:2%"></div>
+        </td>
+        <td class="total">43,663</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">17</td>
+        <td class="repo">
+          <a href="https://github.com/tashfeenahmed/freellmapi" target="_blank" rel="noopener">tashfeenahmed/freellmapi</a>
+          <p class="desc">7.4 billion tokens per month. 34 free LLM providers. 635 free model endpoints. All behind one /v1 endpoint, plus any custom OpenAI-compatible endpoint. Smart routing, automatic failover, encrypted keys. Personal experimentation only.</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+504</span>
+          
+          <div class="bar" style="width:14%"></div>
+        </td>
+        <td class="total">22,881</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">18</td>
+        <td class="repo">
+          <a href="https://github.com/livekit/agents" target="_blank" rel="noopener">livekit/agents</a>
+          <p class="desc">A framework for building realtime voice AI agents 🤖🎙️📹</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+132</span>
+          
+          <div class="bar" style="width:4%"></div>
+        </td>
+        <td class="total">13,788</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">19</td>
+        <td class="repo">
+          <a href="https://github.com/abhigyanpatwari/GitNexus" target="_blank" rel="noopener">abhigyanpatwari/GitNexus</a>
+          <p class="desc">GitNexus: The Zero-Server Code Intelligence Engine - GitNexus is a client-side knowledge graph creator that runs entirely in your browser. Drop in a git repository (Github, Gitlab, Azure, Local) or ZIP file, and get an interactive knowledge graph with a built in Graph RAG Agent. Perfect for code exploration</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+182</span>
+          
+          <div class="bar" style="width:5%"></div>
+        </td>
+        <td class="total">46,602</td>
+      </tr></tbody>
+      </table>
+    </section>
+    <section class="board" data-board="weekly-all">
+      
+      <p class="lede">
+        2026-08-31 的榜单上有 <b>19</b> 个项目，其中
+        <b>0</b> 个是今天新冒出来的，
+        <b>10</b> 个命中了你设的关注方向。
+      </p>
+      <table>
+        <thead>
+          <tr><th>排名</th><th>项目</th><th>新增 star</th><th>总计</th></tr>
+        </thead>
+        <tbody>
+      <tr class="row watched">
+        <td class="rank">1</td>
+        <td class="repo">
+          <a href="https://github.com/freestylefly/awesome-gpt-image-2" target="_blank" rel="noopener">freestylefly/awesome-gpt-image-2</a>
+          <p class="desc">Prompt as Code | GPT-Image2 工业级提示词引擎与模板库，530+ 个案例逆向工程，20+ 套工业级模板，并提炼出Skills，持续更新中</p>
+          <div class="chips"><span class="chip">JavaScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+13,413</span>
+          
+          <div class="bar" style="width:74%"></div>
+        </td>
+        <td class="total">25,785</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">2</td>
+        <td class="repo">
+          <a href="https://github.com/anthropics/claude-plugins-community" target="_blank" rel="noopener">anthropics/claude-plugins-community</a>
+          <p class="desc">Community plugin marketplace for Claude Cowork and Claude Code. Read-only mirror — submit plugins at clau.de/plugin-directory-submission.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+2,162</span>
+          
+          <div class="bar" style="width:12%"></div>
+        </td>
+        <td class="total">2,899</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">3</td>
+        <td class="repo">
+          <a href="https://github.com/tt-a1i/archify" target="_blank" rel="noopener">tt-a1i/archify</a>
+          <p class="desc">Agent skill for beautiful, verifiable architecture, workflow, sequence, data-flow, and lifecycle diagrams—self-contained HTML with motion and crisp export.</p>
+          <div class="chips"><span class="chip">JavaScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+18,103</span>
+          
+          <div class="bar" style="width:100%"></div>
+        </td>
+        <td class="total">35,144</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">4</td>
+        <td class="repo">
+          <a href="https://github.com/omacom/omarchy" target="_blank" rel="noopener">omacom/omarchy</a>
+          <p class="desc">Beautiful, Modern &amp; Opinionated Linux</p>
+          <div class="chips"><span class="chip">Shell</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+6,692</span>
+          
+          <div class="bar" style="width:37%"></div>
+        </td>
+        <td class="total">35,608</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">5</td>
+        <td class="repo">
+          <a href="https://github.com/apache/maka" target="_blank" rel="noopener">apache/maka</a>
+          <p class="desc">Apache Maka (Incubating) is a local-first AI agent workspace. Model messages, tool calls, tool results, permission decisions, and termination events are recorded as an append-only log.</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+1,973</span>
+          
+          <div class="bar" style="width:11%"></div>
+        </td>
+        <td class="total">4,214</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">6</td>
+        <td class="repo">
+          <a href="https://github.com/tashfeenahmed/freellmapi" target="_blank" rel="noopener">tashfeenahmed/freellmapi</a>
+          <p class="desc">7.4 billion tokens per month. 34 free LLM providers. 635 free model endpoints. All behind one /v1 endpoint, plus any custom OpenAI-compatible endpoint. Smart routing, automatic failover, encrypted keys. Personal experimentation only.</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+3,037</span>
+          
+          <div class="bar" style="width:17%"></div>
+        </td>
+        <td class="total">22,882</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">7</td>
+        <td class="repo">
+          <a href="https://github.com/MadsLorentzen/ai-job-search" target="_blank" rel="noopener">MadsLorentzen/ai-job-search</a>
+          <p class="desc">The job search that runs on your machine. AI job application framework built on Claude Code: evaluate postings, tailor CVs, write cover letters, prep interviews. Fork it and own it.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+5,348</span>
+          
+          <div class="bar" style="width:30%"></div>
+        </td>
+        <td class="total">38,578</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">8</td>
+        <td class="repo">
+          <a href="https://github.com/anthropics/claude-plugins-official" target="_blank" rel="noopener">anthropics/claude-plugins-official</a>
+          <p class="desc">Official, Anthropic-managed directory of high quality Claude Code Plugins.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+1,940</span>
+          
+          <div class="bar" style="width:11%"></div>
+        </td>
+        <td class="total">35,629</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">9</td>
+        <td class="repo">
+          <a href="https://github.com/AprilNEA/OpenLogi" target="_blank" rel="noopener">AprilNEA/OpenLogi</a>
+          <p class="desc">⚡️A native, local-first alternative to Logitech Options+, written in Rust 🦀 — remap buttons, DPI, and SmartShift over HID++. No account, no telemetry.</p>
+          <div class="chips"><span class="chip">Rust</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+3,406</span>
+          
+          <div class="bar" style="width:19%"></div>
+        </td>
+        <td class="total">17,922</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">10</td>
+        <td class="repo">
+          <a href="https://github.com/rohitg00/ai-engineering-from-scratch" target="_blank" rel="noopener">rohitg00/ai-engineering-from-scratch</a>
+          <p class="desc">Learn it. Build it. Ship it for others.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+3,720</span>
+          
+          <div class="bar" style="width:21%"></div>
+        </td>
+        <td class="total">51,328</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">11</td>
+        <td class="repo">
+          <a href="https://github.com/cursor/plugins" target="_blank" rel="noopener">cursor/plugins</a>
+          <p class="desc">Cursor plugin specification and official plugins</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+1,503</span>
+          
+          <div class="bar" style="width:8%"></div>
+        </td>
+        <td class="total">6,286</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">12</td>
+        <td class="repo">
+          <a href="https://github.com/K-Dense-AI/scientific-agent-skills" target="_blank" rel="noopener">K-Dense-AI/scientific-agent-skills</a>
+          <p class="desc">Turn any AI agent into an AI Scientist. The #1 Agent Skills library for science, used by 190,000+ scientists worldwide. 165 ready-to-use validated skills plus 100+ scientific databases covering biology, chemistry, medicine, and drug discovery. Compatible with Cursor, Claude Code, Codex, Pi, Antigravity, and the open Agent Skills standard.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+4,309</span>
+          
+          <div class="bar" style="width:24%"></div>
+        </td>
+        <td class="total">39,471</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">13</td>
+        <td class="repo">
+          <a href="https://github.com/ConardLi/garden-skills" target="_blank" rel="noopener">ConardLi/garden-skills</a>
+          <p class="desc">ConardLi&#x27;s open-source Skills collection, featuring web design, knowledge retrieval, image generation, and more.</p>
+          <div class="chips"><span class="chip">CSS</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+1,222</span>
+          
+          <div class="bar" style="width:7%"></div>
+        </td>
+        <td class="total">11,797</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">14</td>
+        <td class="repo">
+          <a href="https://github.com/google/googletest" target="_blank" rel="noopener">google/googletest</a>
+          <p class="desc">GoogleTest - Google Testing and Mocking Framework</p>
+          <div class="chips"><span class="chip">C++</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+441</span>
+          
+          <div class="bar" style="width:2%"></div>
+        </td>
+        <td class="total">39,390</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">15</td>
+        <td class="repo">
+          <a href="https://github.com/Alishahryar1/free-claude-code" target="_blank" rel="noopener">Alishahryar1/free-claude-code</a>
+          <p class="desc">Use Claude Code, Codex, Pi, and OpenCode and more for free (1.3B+ free tokens) from your terminal, app, IDE, or phone like OpenClaw (voice supported + ToS friendly)</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+4,324</span>
+          
+          <div class="bar" style="width:24%"></div>
+        </td>
+        <td class="total">51,977</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">16</td>
+        <td class="repo">
+          <a href="https://github.com/THU-MAIC/OpenMAIC" target="_blank" rel="noopener">THU-MAIC/OpenMAIC</a>
+          <p class="desc">Open Multi-Agent Interactive Classroom — Get an immersive, multi-agent learning experience in just one click</p>
+          <div class="chips"><span class="chip">TypeScript</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+2,085</span>
+          
+          <div class="bar" style="width:12%"></div>
+        </td>
+        <td class="total">24,412</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">17</td>
+        <td class="repo">
+          <a href="https://github.com/abi/screenshot-to-code" target="_blank" rel="noopener">abi/screenshot-to-code</a>
+          <p class="desc">Drop in a screenshot and convert it to clean code (HTML/Tailwind/React/Vue)</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+1,909</span>
+          
+          <div class="bar" style="width:11%"></div>
+        </td>
+        <td class="total">76,436</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">18</td>
+        <td class="repo">
+          <a href="https://github.com/openai/codex" target="_blank" rel="noopener">openai/codex</a>
+          <p class="desc">Lightweight coding agent that runs in your terminal</p>
+          <div class="chips"><span class="chip">Rust</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+5,510</span>
+          
+          <div class="bar" style="width:30%"></div>
+        </td>
+        <td class="total">120,154</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">19</td>
+        <td class="repo">
+          <a href="https://github.com/tinyhumansai/openhuman" target="_blank" rel="noopener">tinyhumansai/openhuman</a>
+          <p class="desc">Your Personal AI super intelligence. A brain that builds a local-first memory of your life, a fantastic orchestrator of agent fleets and workflows, and a deep researcher.</p>
+          <div class="chips"><span class="chip">Rust</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+2,526</span>
+          
+          <div class="bar" style="width:14%"></div>
+        </td>
+        <td class="total">39,034</td>
+      </tr></tbody>
+      </table>
+    </section>
+    <section class="board" data-board="daily-python">
+      
+      <p class="lede">
+        2026-08-31 的榜单上有 <b>21</b> 个项目，其中
+        <b>0</b> 个是今天新冒出来的，
+        <b>6</b> 个命中了你设的关注方向。
+      </p>
+      <table>
+        <thead>
+          <tr><th>排名</th><th>项目</th><th>新增 star</th><th>总计</th></tr>
+        </thead>
+        <tbody>
+      <tr class="row watched">
+        <td class="rank">1</td>
+        <td class="repo">
+          <a href="https://github.com/K-Dense-AI/scientific-agent-skills" target="_blank" rel="noopener">K-Dense-AI/scientific-agent-skills</a>
+          <p class="desc">Turn any AI agent into an AI Scientist. The #1 Agent Skills library for science, used by 190,000+ scientists worldwide. 165 ready-to-use validated skills plus 100+ scientific databases covering biology, chemistry, medicine, and drug discovery. Compatible with Cursor, Claude Code, Codex, Pi, Antigravity, and the open Agent Skills standard.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+1,114</span>
+          
+          <div class="bar" style="width:100%"></div>
+        </td>
+        <td class="total">39,471</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">2</td>
+        <td class="repo">
+          <a href="https://github.com/p-e-w/heretic" target="_blank" rel="noopener">p-e-w/heretic</a>
+          <p class="desc">Fully automatic censorship removal for language models</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+369</span>
+          
+          <div class="bar" style="width:33%"></div>
+        </td>
+        <td class="total">29,234</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">3</td>
+        <td class="repo">
+          <a href="https://github.com/unclecode/crawl4ai" target="_blank" rel="noopener">unclecode/crawl4ai</a>
+          <p class="desc">🚀🤖 Crawl4AI: Open-source LLM Friendly Web Crawler &amp; Scraper. Don&#x27;t be shy, join here: https://discord.gg/jP8KfhDhyN</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+221</span>
+          
+          <div class="bar" style="width:20%"></div>
+        </td>
+        <td class="total">80,299</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">4</td>
+        <td class="repo">
+          <a href="https://github.com/mvanhorn/last30days-skill" target="_blank" rel="noopener">mvanhorn/last30days-skill</a>
+          <p class="desc">AI agent skill that researches any topic across Reddit, X, YouTube, HN, Polymarket, and the web - then synthesizes a grounded summary</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+230</span>
+          
+          <div class="bar" style="width:21%"></div>
+        </td>
+        <td class="total">60,550</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">5</td>
+        <td class="repo">
+          <a href="https://github.com/pollen-robotics/microduck_rl" target="_blank" rel="noopener">pollen-robotics/microduck_rl</a>
+          <p class="desc">RL training environments for Microduck (mjlab)</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+168</span>
+          
+          <div class="bar" style="width:15%"></div>
+        </td>
+        <td class="total">827</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">6</td>
+        <td class="repo">
+          <a href="https://github.com/handsomestWei/patent-disclosure-skill" target="_blank" rel="noopener">handsomestWei/patent-disclosure-skill</a>
+          <p class="desc">中国专利.skill：专利点挖掘与交底书（发明/实用/外观）编写，通俗解读专利，嗅探政策动向，辅助审查答复。</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+62</span>
+          
+          <div class="bar" style="width:6%"></div>
+        </td>
+        <td class="total">5,781</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">7</td>
+        <td class="repo">
+          <a href="https://github.com/livekit/agents" target="_blank" rel="noopener">livekit/agents</a>
+          <p class="desc">A framework for building realtime voice AI agents 🤖🎙️📹</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+132</span>
+          
+          <div class="bar" style="width:12%"></div>
+        </td>
+        <td class="total">13,788</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">8</td>
+        <td class="repo">
+          <a href="https://github.com/abi/screenshot-to-code" target="_blank" rel="noopener">abi/screenshot-to-code</a>
+          <p class="desc">Drop in a screenshot and convert it to clean code (HTML/Tailwind/React/Vue)</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+418</span>
+          
+          <div class="bar" style="width:38%"></div>
+        </td>
+        <td class="total">76,436</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">9</td>
+        <td class="repo">
+          <a href="https://github.com/warpdotdev/common-skills" target="_blank" rel="noopener">warpdotdev/common-skills</a>
+          <p class="desc"><span class="nodesc">该项目没有写描述</span></p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+71</span>
+          
+          <div class="bar" style="width:6%"></div>
+        </td>
+        <td class="total">458</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">10</td>
+        <td class="repo">
+          <a href="https://github.com/666ghj/MiroFish" target="_blank" rel="noopener">666ghj/MiroFish</a>
+          <p class="desc">A Simple and Universal Swarm Intelligence Engine, Predicting Anything. 简洁通用的群体智能引擎，预测万物</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+53</span>
+          
+          <div class="bar" style="width:5%"></div>
+        </td>
+        <td class="total">71,784</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">11</td>
+        <td class="repo">
+          <a href="https://github.com/taoufik123-collab/claude-watch" target="_blank" rel="noopener">taoufik123-collab/claude-watch</a>
+          <p class="desc">Give Claude the ability to watch any video — scene-change frames + transcript + a structured report, with a 0-10s hook microscope and optional Obsidian auto-save.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+15</span>
+          
+          <div class="bar" style="width:2%"></div>
+        </td>
+        <td class="total">713</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">12</td>
+        <td class="repo">
+          <a href="https://github.com/rommapp/romm" target="_blank" rel="noopener">rommapp/romm</a>
+          <p class="desc">A beautiful, powerful, self-hosted ROM manager and player.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+36</span>
+          
+          <div class="bar" style="width:3%"></div>
+        </td>
+        <td class="total">12,458</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">13</td>
+        <td class="repo">
+          <a href="https://github.com/unslothai/unsloth" target="_blank" rel="noopener">unslothai/unsloth</a>
+          <p class="desc">Local UI to run and train LLMs and diffusion models. Supports GGUF, MLX, Qwen3.8, Kimi K3, MiniMax-H3, Gemma 4, FLUX and more.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+107</span>
+          
+          <div class="bar" style="width:10%"></div>
+        </td>
+        <td class="total">75,281</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">14</td>
+        <td class="repo">
+          <a href="https://github.com/happycola233/tchMaterial-parser" target="_blank" rel="noopener">happycola233/tchMaterial-parser</a>
+          <p class="desc">国家中小学智慧教育平台 电子课本下载工具，帮助您从智慧教育平台中获取电子课本的 PDF 文件网址并进行下载，让您更方便地获取课本内容。</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+64</span>
+          
+          <div class="bar" style="width:6%"></div>
+        </td>
+        <td class="total">6,430</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">15</td>
+        <td class="repo">
+          <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp/yt-dlp</a>
+          <p class="desc">A feature-rich command-line audio/video downloader</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+209</span>
+          
+          <div class="bar" style="width:19%"></div>
+        </td>
+        <td class="total">187,972</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">16</td>
+        <td class="repo">
+          <a href="https://github.com/D4Vinci/Scrapling" target="_blank" rel="noopener">D4Vinci/Scrapling</a>
+          <p class="desc">🕷️ An adaptive Web Scraping framework that handles everything from a single request to a full-scale crawl!</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+253</span>
+          
+          <div class="bar" style="width:23%"></div>
+        </td>
+        <td class="total">77,396</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">17</td>
+        <td class="repo">
+          <a href="https://github.com/LibreTranslate/LibreTranslate" target="_blank" rel="noopener">LibreTranslate/LibreTranslate</a>
+          <p class="desc">Free and Open Source Machine Translation API. Self-hosted, offline capable and easy to setup.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+72</span>
+          
+          <div class="bar" style="width:6%"></div>
+        </td>
+        <td class="total">16,239</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">18</td>
+        <td class="repo">
+          <a href="https://github.com/shootthesound/Fizgig" target="_blank" rel="noopener">shootthesound/Fizgig</a>
+          <p class="desc">Krea 2, MiniMax &amp; Klein 9B LoRA - LoKR Studio — train, profile, repair, and extract Krea 2, Flux 2 Klein 9B &amp; MiniMax LoRAs &amp; LoKRs</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+33</span>
+          
+          <div class="bar" style="width:3%"></div>
+        </td>
+        <td class="total">301</td>
+      </tr>
+      <tr class="row">
+        <td class="rank">19</td>
+        <td class="repo">
+          <a href="https://github.com/kaifcodec/user-scanner" target="_blank" rel="noopener">kaifcodec/user-scanner</a>
+          <p class="desc">🕵️‍♂️ (2-in-1) Email &amp; Username OSINT suite for deep data extraction just from a single Email/Username. Analyzes 465+ actively maintained scan vectors (175+ email / 290+ username) for security research, investigations, and digital footprinting.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+462</span>
+          
+          <div class="bar" style="width:41%"></div>
+        </td>
+        <td class="total">3,896</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">20</td>
+        <td class="repo">
+          <a href="https://github.com/Osmantic/ODS" target="_blank" rel="noopener">Osmantic/ODS</a>
+          <p class="desc">Turn your PC, Mac, or Linux box into an AI server. LLM inference, chat UI, voice, agents, workflows, RAG, and image generation.</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+331</span>
+          
+          <div class="bar" style="width:30%"></div>
+        </td>
+        <td class="total">5,165</td>
+      </tr>
+      <tr class="row watched">
+        <td class="rank">21</td>
+        <td class="repo">
+          <a href="https://github.com/agent0ai/agent-zero" target="_blank" rel="noopener">agent0ai/agent-zero</a>
+          <p class="desc">Agent Zero AI framework</p>
+          <div class="chips"><span class="chip">Python</span></div>
+        </td>
+        <td class="gain">
+          <span class="num">+20</span>
+          
+          <div class="bar" style="width:2%"></div>
+        </td>
+        <td class="total">19,034</td>
+      </tr></tbody>
+      </table>
+    </section>
+  <footer>数据来自 github.com/trending，每天抓取一次并保留历史快照。</footer>
+</div>
+<script>
+const tabs = document.querySelectorAll('nav button');
+const boards = document.querySelectorAll('.board');
+tabs.forEach(tab => tab.addEventListener('click', () => {
+  tabs.forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+  boards.forEach(b => b.classList.toggle('active', b.dataset.board === tab.dataset.board));
+}));
+</script>
+</body>
+</html>
