@@ -17,31 +17,36 @@ def _esc(text):
     return html.escape(text or "", quote=True)
 
 
-def _row_html(item, max_delta):
+def _row_html(item, max_delta, raw=False):
     width = 0
     if max_delta > 0:
         width = max(2, round(item["period_stars"] / max_delta * 100))
 
     chips = []
-    if item["is_new"]:
-        chips.append('<span class="chip chip-new">新</span>')
-    if item.get("gain_is_approx"):
-        chips.append('<span class="chip">增量为估算</span>')
-    elif item["days_on"] > 1:
-        chips.append(f'<span class="chip">在榜 {item["days_on"]} 天</span>')
+    if not raw:
+        # 原榜是纯复刻，不加任何我们自己算出来的标注
+        if item["is_new"]:
+            chips.append('<span class="chip chip-new">新</span>')
+        if item.get("gain_is_approx"):
+            chips.append('<span class="chip">增量为估算</span>')
+        elif item["days_on"] > 1:
+            chips.append(f'<span class="chip">在榜 {item["days_on"]} 天</span>')
     if item["lang"]:
         chips.append(f'<span class="chip">{_esc(item["lang"])}</span>')
 
     change = ""
-    if item["star_change"] is not None and item["star_change"] != 0:
+    if not raw and item["star_change"] is not None and item["star_change"] != 0:
         rising = item["star_change"] > 0
         cls = "up" if rising else "down"
         arrow = "▲" if rising else "▼"
         change = (f'<span class="delta {cls}">{arrow} 比上次'
                   f'{"多" if rising else "少"} {abs(item["star_change"]):,}</span>')
 
-    watched = " watched" if item["matched"] else ""
+    watched = " watched" if (item["matched"] and not raw) else ""
     desc = _esc(item["description"]) or "<span class=\"nodesc\">该项目没有写描述</span>"
+    en = item.get("description_en") or ""
+    desc_en = (f'<p class="desc-en">{_esc(en)}</p>'
+               if en and en != item.get("description") else "")
 
     return f"""
       <tr class="row{watched}">
@@ -49,6 +54,7 @@ def _row_html(item, max_delta):
         <td class="repo">
           <a href="{_esc(item['url'])}" target="_blank" rel="noopener">{_esc(item['repo'])}</a>
           <p class="desc">{desc}</p>
+          {desc_en}
           <div class="chips">{''.join(chips)}</div>
         </td>
         <td class="gain">
@@ -69,7 +75,16 @@ def _board_html(key, board):
     new_count = sum(1 for i in items if i["is_new"])
     watch_count = sum(1 for i in items if i["matched"])
 
-    rows = "".join(_row_html(i, max_delta) for i in items)
+    raw = board.get("raw", False)
+    rows = "".join(_row_html(i, max_delta, raw=raw) for i in items)
+
+    if raw:
+        lede = (f"{board['date']} GitHub Trending 原始榜单，共 <b>{len(items)}</b> 个项目，"
+                f"按 GitHub 的热度排序，不做任何标注。")
+    else:
+        lede = (f"{board['date']} 的榜单上有 <b>{len(items)}</b> 个项目，其中 "
+                f"<b>{new_count}</b> 个是今天新冒出来的，"
+                f"<b>{watch_count}</b> 个命中了你设的关注方向。")
 
     banner = ""
     if any(i.get("source") not in (None, "trending") for i in items):
@@ -82,11 +97,7 @@ def _board_html(key, board):
     return f"""
     <section class="board" data-board="{key}">
       {banner}
-      <p class="lede">
-        {board['date']} 的榜单上有 <b>{len(items)}</b> 个项目，其中
-        <b>{new_count}</b> 个是今天新冒出来的，
-        <b>{watch_count}</b> 个命中了你设的关注方向。
-      </p>
+      <p class="lede">{lede}</p>
       <table>
         <thead>
           <tr><th>排名</th><th>项目</th><th>新增 star</th><th>总计</th></tr>
@@ -159,6 +170,11 @@ thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
   overflow: hidden;
 }
 .nodesc { color: #a5abb3; }
+.desc-en {
+  margin: -2px 0 6px; color: #96a0ab; font-size: 12.5px; max-width: 62ch;
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   font-size: 11.5px; color: var(--muted); background: #f2f3f5;
@@ -183,6 +199,21 @@ thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
 }
 code { background: rgba(31,35,41,.06); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
 footer { margin-top: 32px; color: var(--muted); font-size: 12.5px; }
+.keywords {
+  margin-top: 32px; padding: 18px 20px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.kw-intro { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+.kw-group { margin-bottom: 14px; }
+.kw-group:last-child { margin-bottom: 0; }
+.kw-group h3 {
+  margin: 0 0 6px; font-size: 12.5px; font-weight: 600; color: var(--ink);
+}
+.kw-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.kw {
+  font-size: 12px; color: var(--muted); background: #f2f3f5;
+  padding: 2px 8px; border-radius: 4px; font-family: inherit;
+}
 @media (max-width: 640px) {
   .wrap { padding: 24px 14px 60px; }
   thead { display: none; }
@@ -205,7 +236,27 @@ tabs.forEach(tab => tab.addEventListener('click', () => {
 """
 
 
-def render(boards, output_path):
+def _keywords_html(groups):
+    """把关注方向按分组渲染成一块面板，让团队知道我们在盯什么"""
+    if not groups:
+        return ""
+    if not isinstance(groups, dict):
+        groups = {"关注方向": groups}
+    total = sum(len(v) for v in groups.values())
+    blocks = []
+    for name, words in groups.items():
+        chips = "".join(f'<span class="kw">{_esc(w)}</span>' for w in words)
+        blocks.append(
+            f'<div class="kw-group"><h3>{_esc(name)}</h3><div class="kw-list">{chips}</div></div>'
+        )
+    return f'''
+  <section class="keywords">
+    <p class="kw-intro">命中以下任一关键词的项目，会在日榜和周榜里标蓝。共 {total} 个词，「GitHub 原榜」板块不做标注。</p>
+    {"".join(blocks)}
+  </section>'''
+
+
+def render(boards, output_path, keyword_groups=None):
     """
     boards: { key: {"label": "日榜 · 全部语言", "date": "2026-08-30", "items": [...]} }
     """
@@ -238,6 +289,7 @@ def render(boards, output_path):
     <nav>{tabs}</nav>
   </header>
   {sections}
+  {_keywords_html(keyword_groups)}
   <footer>数据来自 github.com/trending，每天抓取一次并保留历史快照。</footer>
 </div>
 <script>{JS}</script>

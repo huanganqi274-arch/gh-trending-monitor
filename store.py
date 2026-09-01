@@ -203,3 +203,81 @@ def prune(conn, keep_days=180):
     cur = conn.execute("DELETE FROM snapshots WHERE date < ?", (cutoff,))
     conn.commit()
     return cur.rowcount
+
+
+def get_merged_board(conn, since, languages, keywords=None):
+    """
+    把多个语言榜合并成一份更全的当日榜单。
+
+    为什么需要：GitHub 的全语言日榜单页最多 25 条，今天往往只有十几条。
+    各语言的日榜也都是"今天热度最高的"，合起来去重、按今日新增 star 重新排序，
+    就得到一份覆盖更广的当日热榜。
+
+    is_new / days_on 的比较也在合并后的集合上做，保证口径一致。
+    """
+    keywords = [k.lower() for k in (keywords or [])]
+
+    def snapshot(on_date):
+        """取某一天、这些语言榜合并去重后的项目字典"""
+        merged = {}
+        for lang in languages:
+            for r in conn.execute(
+                "SELECT * FROM snapshots WHERE since=? AND language=? AND date=?",
+                (since, lang, on_date),
+            ):
+                repo = r["repo"]
+                # 同一个项目可能同时出现在全语言榜和某语言榜，取新增 star 更大的那条
+                if repo not in merged or r["period_stars"] > merged[repo]["period_stars"]:
+                    merged[repo] = dict(r)
+        return merged
+
+    placeholders = ",".join("?" for _ in languages)
+    row = conn.execute(
+        f"SELECT MAX(date) AS d FROM snapshots WHERE since=? AND language IN ({placeholders})",
+        (since, *languages),
+    ).fetchone()
+    on_date = row["d"] if row and row["d"] else None
+    if not on_date:
+        return []
+
+    prev_row = conn.execute(
+        f"SELECT MAX(date) AS d FROM snapshots WHERE since=? AND language IN ({placeholders}) AND date < ?",
+        (since, *languages, on_date),
+    ).fetchone()
+    prev_date = prev_row["d"] if prev_row and prev_row["d"] else None
+
+    today = snapshot(on_date)
+    prev = snapshot(prev_date) if prev_date else {}
+
+    ordered = sorted(today.values(), key=lambda r: r["period_stars"], reverse=True)
+
+    board = []
+    for rank, r in enumerate(ordered, start=1):
+        repo = r["repo"]
+        days = conn.execute(
+            f"SELECT COUNT(DISTINCT date) AS days, MIN(date) AS first_seen FROM snapshots "
+            f"WHERE since=? AND language IN ({placeholders}) AND repo=? AND date<=?",
+            (since, *languages, repo, on_date),
+        ).fetchone()
+        p = prev.get(repo)
+        source = r.get("source") or "trending"
+
+        board.append({
+            "rank": rank,
+            "repo": repo,
+            "url": f"https://github.com/{repo}",
+            "description": r["description"] or "",
+            "lang": r["lang"] or "",
+            "stars": r["stars"],
+            "forks": r["forks"],
+            "period_stars": r["period_stars"],
+            "gain_is_approx": False,
+            "source": source,
+            "is_new": p is None and bool(prev_date),
+            "days_on": days["days"] if days else 1,
+            "first_seen": days["first_seen"] if days else on_date,
+            "star_change": (r["period_stars"] - p["period_stars"]) if p else None,
+            "matched": match_keywords(f"{repo} {r['description'] or ''}", keywords),
+            "_date": on_date,
+        })
+    return board

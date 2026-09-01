@@ -1,98 +1,142 @@
 # ============ 抓哪些榜单 ============
-# since: daily / weekly / monthly
-# language: 留空 = 全部语言；也可写 python / typescript / rust / go 等
+# 这是「抓取清单」，决定去 GitHub 拉哪些页面。
+# GitHub 全语言日榜单页最多 25 条（常常只有十几条），
+# 所以要靠合并多个语言榜才能凑够几十个项目。
 targets:
   - since: daily
     language: ""
-  - since: weekly
-    language: ""
   - since: daily
     language: python
+  - since: daily
+    language: typescript
+  - since: daily
+    language: javascript
+  - since: daily
+    language: java
+  - since: daily
+    language: html
+  - since: weekly
+    language: ""
+  - since: weekly
+    language: python
+  - since: weekly
+    language: typescript
 
-# ============ 重点关注关键词 ============
-# 按"这东西能不能直接用在极客上线的交付里"来选的，分四类。
-# 命中的项目会在面板上标蓝、在飞书卡片里带 ⭐
-# 匹配范围：仓库名 + 项目描述，按词边界匹配（java 不会误命中 javascript）
-keywords:
-  # --- 一、能直接省交付工时的 ---
-  - low-code
-  - lowcode
-  - no-code
-  - form builder
-  - form designer
-  - admin dashboard
-  - admin panel
-  - scaffold
-  - boilerplate
-  - starter kit
-  - crud
-  - workflow engine
-  - bpmn
+# ============ 面板上显示哪些板块 ============
+# 把上面抓到的语言榜合并去重，按当日新增 star 重新排序。
+boards:
+  - label: 日榜
+    since: daily
+    merge_languages: ["", python, typescript, javascript, java, html]
+  - label: 周榜
+    since: weekly
+    merge_languages: ["", python, typescript]
 
-  # --- 二、原型和设计环节 ---
-  - prototype
-  - wireframe
-  - design system
-  - ui component
-  - component library
-  - figma
-  - whiteboard
-  - flowchart
-  - diagram
-
-  # --- 三、能包装成客户方案卖的 AI 能力 ---
-  - rag
-  - knowledge base
-  - mcp
-  - agent framework
-  - multi-agent
-  - coding agent
-  - chatbot
-  - customer service
-  - document parsing
-  - ocr
-  - text-to-speech
-  - digital human
-
-  # --- 四、你们的技术栈和交付形态 ---
-  - spring boot
-  - java
-  - mini program
-  - miniprogram
-  - wechat
-  - uni-app
-  - taro
-  - erp
-  - crm
-  - docx
-  - excel
-  - spreadsheet
-  - self-hosted
-
-# 说明：故意没有放 "ai" 这种泛词。
-# trending 榜上近一半项目描述里都有 ai，留着等于没过滤。
-# 宁可漏一些，也别让"关注"标记贬值成背景噪音。
-
-# ============ 推送设置 ============
-notify:
-  # 飞书群自定义机器人的 webhook 地址
-  # 建议留空，改用环境变量 FEISHU_WEBHOOK（避免泄露）
-  feishu_webhook: ""
-  # 如果机器人开启了"签名校验"，把密钥填这里或用环境变量 FEISHU_SECRET
-  feishu_secret: ""
-  # 推送榜单的前 N 条
-  top_n: 10
-  # true = 只推送今天新上榜的项目（老项目不再重复打扰）
-  only_new: false
-  # 推送哪个榜单（对应上面 targets 里的一项）
+# ============ 原榜板块 ============
+# 纯粹复刻 GitHub Trending 全语言日榜，不合并、不标注。
+raw_board:
+  enabled: true
   since: daily
   language: ""
 
+# ============ 重点关注关键词 ============
+# 分组会原样显示在面板顶部，方便团队知道我们在盯什么方向。
+# 匹配范围：仓库名 + 项目描述，按词边界匹配（java 不会误命中 javascript）
+keywords:
+  产品：图表 / 文档 / 演示:
+    - diagram
+    - flowchart
+    - mindmap
+    - whiteboard
+    - sequence diagram
+    - wireframe
+    - prototype
+    - mockup
+    - slides
+    - slide deck
+    - presentation
+    - ppt
+    - keynote
+    - markdown
+    - docx
+    - excel
+    - spreadsheet
+    - pdf
+    - export
+    - prd
+    - requirements
+    - user story
+    - roadmap
+    - changelog
+
+  UI 与设计:
+    - design system
+    - component library
+    - ui kit
+    - ui component
+    - figma
+    - design token
+    - landing page
+    - tailwind
+    - shadcn
+    - icon
+    - illustration
+    - animation
+    - motion
+    - typography
+    - dashboard
+    - screenshot to code
+    - design to code
+    - theme editor
+
+  Agent Skill 生态:
+    - agent skill
+    - skill
+    - subagent
+    - mcp
+
+  技术与交付:
+    - low-code
+    - no-code
+    - form builder
+    - workflow engine
+    - spring boot
+    - java
+    - mini program
+    - uni-app
+    - wechat
+    - erp
+    - crm
+    - rag
+    - knowledge base
+    - ocr
+    - chatbot
+
+# 刻意没放的词及原因：
+#   ai          —— 榜上近一半项目都带，等于没过滤
+#   claude code —— 实测命中 30 个，里面全是求职、提示词泄露之类的无关项目
+#   self-hosted —— 捞上来的多是 VPN、邮件服务器这类基础设施
+#   template / theme / admin / spec / docs —— 太泛，噪音大
+
+# ============ 翻译 ============
+# 关掉了。技术描述机翻质量一般，留着原文更准。想再试改成 true。
+translate:
+  enabled: false
+  target: zh-CN
+
 # ============ 备用数据源 ============
-# 爬虫抓不到时（多半是 GitHub 改版），自动降级到官方 Search API
-# 注意：Search API 给的不是 Trending 榜，只是"最近创建 + star 最多"的近似
 fallback:
   enabled: true
+
+# ============ 推送设置 ============
+notify:
+  # 建议留空，用环境变量 FEISHU_WEBHOOK（GitHub 上存在 Secrets 里）
+  feishu_webhook: ""
+  feishu_secret: ""
+  top_n: 10
+  only_new: false
+  # 推哪个板块（对应 boards 里的 label）
+  board: 日榜
 
 # ============ 路径 ============
 db_path: data/trending.db
