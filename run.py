@@ -17,9 +17,26 @@ import fallback
 import notify
 import scraper
 import store
-import translate
 
 PERIOD_NAME = {"daily": "日榜", "weekly": "周榜", "monthly": "月榜"}
+
+
+def maybe_translate(cfg, conn, items):
+    """
+    需要翻译时才加载 translate 模块。
+
+    翻译是可选功能，默认关闭。写成延迟导入，是为了让缺少 translate.py
+    的部署也能正常跑——不能因为一个可选功能没装就让整个流程崩掉。
+    """
+    conf = cfg.get("translate", {}) or {}
+    if not conf.get("enabled"):
+        return items
+    try:
+        import translate
+    except ImportError:
+        print("  · 翻译已开启但缺少 translate.py，跳过翻译")
+        return items
+    return translate.translate_board(conn, items, target=conf.get("target", "zh-CN"))
 
 
 def flatten_keywords(keywords):
@@ -116,9 +133,7 @@ def cmd_dashboard(cfg):
         langs = spec.get("merge_languages", [""])
         langs = ["" if l is None else str(l) for l in langs]
         items = store.get_merged_board(conn, since, langs, keywords=keywords)
-        if cfg.get("translate", {}).get("enabled"):
-            items = translate.translate_board(
-                conn, items, target=cfg["translate"].get("target", "zh-CN"))
+        items = maybe_translate(cfg, conn, items)
         boards[f"{since}-merged"] = {
             "label": spec.get("label", since),
             "date": items[0]["_date"] if items else "暂无数据",
@@ -160,9 +175,7 @@ def cmd_push(cfg):
     conn = store.connect(cfg["db_path"])
     board = store.get_merged_board(conn, since, langs,
                                    keywords=flatten_keywords(cfg.get("keywords")))
-    if cfg.get("translate", {}).get("enabled"):
-        board = translate.translate_board(
-            conn, board, target=cfg["translate"].get("target", "zh-CN"))
+    board = maybe_translate(cfg, conn, board)
     conn.close()
 
     if not board:
